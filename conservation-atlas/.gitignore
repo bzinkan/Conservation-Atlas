@@ -1,0 +1,49 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build outputs
+dist/
+build/
+*.tsbuildinfo
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Testing
+coverage/
+.nyc_output/
+
+# Database
+*.sql.backup
+wdpa_map.sql
+
+# WDPA data files (too large for git)
+*.gpkg
+*.shp
+*.shx
+*.dbf
+*.prj
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Prisma
+prisma/migrations/**/migration_lock.toml

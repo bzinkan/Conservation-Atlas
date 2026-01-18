@@ -1,0 +1,323 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "event_extraction_v1",
+  "title": "Event Extraction V1",
+  "description": "Schema for conservation event extraction from source documents",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "title",
+    "event_type",
+    "severity",
+    "confidence",
+    "location",
+    "temporal",
+    "summary",
+    "source_ref"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "event_extraction_v1"
+    },
+    
+    "title": {
+      "type": "string",
+      "minLength": 10,
+      "maxLength": 300,
+      "description": "Concise headline describing the event"
+    },
+    
+    "event_type": {
+      "type": "object",
+      "required": ["primary"],
+      "properties": {
+        "primary": {
+          "type": "string",
+          "enum": [
+            "wildfire",
+            "deforestation",
+            "illegal_logging",
+            "poaching",
+            "pollution",
+            "oil_spill",
+            "disease_outbreak",
+            "coral_bleaching",
+            "invasive_species",
+            "habitat_loss",
+            "climate_impact",
+            "policy_change",
+            "restoration",
+            "conservation_win",
+            "species_discovery",
+            "other"
+          ]
+        },
+        "secondary": {
+          "type": ["string", "null"],
+          "enum": [
+            "wildfire",
+            "deforestation",
+            "illegal_logging",
+            "poaching",
+            "pollution",
+            "oil_spill",
+            "disease_outbreak",
+            "coral_bleaching",
+            "invasive_species",
+            "habitat_loss",
+            "climate_impact",
+            "policy_change",
+            "restoration",
+            "conservation_win",
+            "species_discovery",
+            "other",
+            null
+          ]
+        }
+      }
+    },
+    
+    "severity": {
+      "type": "object",
+      "required": ["level"],
+      "properties": {
+        "level": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5,
+          "description": "1=minimal, 2=low, 3=moderate, 4=high, 5=severe"
+        },
+        "rationale": {
+          "type": ["string", "null"],
+          "maxLength": 200,
+          "description": "Brief explanation for the severity rating"
+        }
+      }
+    },
+    
+    "confidence": {
+      "type": "object",
+      "required": ["extraction"],
+      "properties": {
+        "extraction": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Model confidence in extraction accuracy (0-1)"
+        },
+        "geolocation": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Confidence in coordinates accuracy"
+        }
+      }
+    },
+    
+    "location": {
+      "type": "object",
+      "required": ["admin"],
+      "properties": {
+        "geometry": {
+          "type": ["object", "null"],
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "Point"
+            },
+            "coordinates": {
+              "type": "array",
+              "items": { "type": "number" },
+              "minItems": 2,
+              "maxItems": 2,
+              "description": "[longitude, latitude] - GeoJSON order"
+            },
+            "precision": {
+              "type": "string",
+              "enum": ["exact", "approximate", "centroid", "unknown"]
+            }
+          },
+          "required": ["type", "coordinates"]
+        },
+        "admin": {
+          "type": "object",
+          "required": ["country"],
+          "properties": {
+            "country": {
+              "type": "string",
+              "minLength": 2,
+              "description": "Country name (full name, not ISO code)"
+            },
+            "admin1": {
+              "type": ["string", "null"],
+              "description": "State/province/region"
+            },
+            "admin2": {
+              "type": ["string", "null"],
+              "description": "County/district"
+            },
+            "locality": {
+              "type": ["string", "null"],
+              "description": "Specific place name (park, city, landmark)"
+            }
+          }
+        },
+        "description": {
+          "type": ["string", "null"],
+          "maxLength": 200,
+          "description": "Human-readable location description"
+        }
+      }
+    },
+    
+    "temporal": {
+      "type": "object",
+      "properties": {
+        "start_date": {
+          "type": ["string", "null"],
+          "format": "date",
+          "description": "Event start date (YYYY-MM-DD)"
+        },
+        "end_date": {
+          "type": ["string", "null"],
+          "format": "date",
+          "description": "Event end date if known (YYYY-MM-DD)"
+        },
+        "is_ongoing": {
+          "type": "boolean",
+          "default": true
+        },
+        "reported_at": {
+          "type": ["string", "null"],
+          "format": "date-time",
+          "description": "When the event was first reported"
+        }
+      }
+    },
+    
+    "summary": {
+      "type": "object",
+      "required": ["short"],
+      "properties": {
+        "short": {
+          "type": "string",
+          "minLength": 50,
+          "maxLength": 400,
+          "description": "2-3 sentence summary"
+        },
+        "detailed": {
+          "type": ["string", "null"],
+          "maxLength": 1500,
+          "description": "Full context and details"
+        }
+      }
+    },
+    
+    "entities": {
+      "type": "object",
+      "properties": {
+        "species": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Species mentioned in the source"
+        },
+        "organizations": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Organizations mentioned"
+        },
+        "protected_areas": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Protected areas mentioned by name"
+        },
+        "people": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Key people quoted or mentioned"
+        }
+      },
+      "default": {
+        "species": [],
+        "organizations": [],
+        "protected_areas": [],
+        "people": []
+      }
+    },
+    
+    "classification": {
+      "type": "object",
+      "properties": {
+        "is_classroom_safe": {
+          "type": "boolean",
+          "description": "Safe for K-12 educational content"
+        },
+        "classroom_topic_tags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "oceans",
+              "forests",
+              "wildlife",
+              "climate",
+              "pollution",
+              "ecosystems",
+              "conservation",
+              "biodiversity",
+              "water",
+              "land_use"
+            ]
+          }
+        },
+        "content_warnings": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Any content warnings (violence, animal death, etc.)"
+        }
+      }
+    },
+    
+    "source_ref": {
+      "type": "object",
+      "required": ["source_id"],
+      "properties": {
+        "source_id": {
+          "type": "integer",
+          "description": "Database ID of the source record"
+        },
+        "url": {
+          "type": ["string", "null"],
+          "format": "uri"
+        },
+        "publisher": {
+          "type": ["string", "null"]
+        },
+        "published_at": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        }
+      }
+    },
+    
+    "metrics": {
+      "type": ["object", "null"],
+      "description": "Quantitative data extracted from source",
+      "properties": {
+        "area_affected_hectares": { "type": ["number", "null"] },
+        "area_affected_km2": { "type": ["number", "null"] },
+        "count_animals_affected": { "type": ["integer", "null"] },
+        "count_trees_affected": { "type": ["integer", "null"] },
+        "cost_usd": { "type": ["number", "null"] },
+        "duration_days": { "type": ["integer", "null"] },
+        "custom": {
+          "type": ["object", "null"],
+          "additionalProperties": true
+        }
+      }
+    }
+  },
+  
+  "additionalProperties": false
+}

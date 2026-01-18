@@ -1,0 +1,420 @@
+// packages/api/prisma/schema.prisma
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [postgis]
+}
+
+// ============================================
+// EVENTS - Core event records
+// ============================================
+model Event {
+  id                      String   @id @default(uuid())
+  
+  // Core identification
+  title                   String   @db.VarChar(500)
+  eventTypePrimary        String   @map("event_type_primary") @db.VarChar(50)
+  eventTypeSecondary      String?  @map("event_type_secondary") @db.VarChar(50)
+  
+  // Scoring
+  severityLevel           Int      @map("severity_level")
+  confidenceExtraction    Decimal  @map("confidence_extraction") @db.Decimal(3, 2)
+  
+  // Temporal
+  startDate               DateTime? @map("start_date") @db.Date
+  endDate                 DateTime? @map("end_date") @db.Date
+  isOngoing               Boolean   @default(true) @map("is_ongoing")
+  
+  // Geography
+  country                 String   @db.VarChar(100)
+  admin1                  String?  @db.VarChar(200)
+  admin2                  String?  @db.VarChar(200)
+  locationName            String?  @map("location_name") @db.VarChar(300)
+  latitude                Decimal? @db.Decimal(10, 8)
+  longitude               Decimal? @db.Decimal(11, 8)
+  
+  // Content
+  summaryShort            String   @map("summary_short") @db.Text
+  summaryDetailed         String?  @map("summary_detailed") @db.Text
+  
+  // Classification
+  isClassroomSafe         Boolean  @default(false) @map("is_classroom_safe")
+  classroomTopicTags      String[] @map("classroom_topic_tags")
+  
+  // Protected area relationship
+  nearestProtectedAreaId  String?  @map("nearest_protected_area_id")
+  distanceToProtectedKm   Decimal? @map("distance_to_protected_km") @db.Decimal(10, 2)
+  isInsideProtectedArea   Boolean  @default(false) @map("is_inside_protected_area")
+  
+  // Source tracking
+  sourceCount             Int      @default(1) @map("source_count")
+  primarySourceType       String?  @map("primary_source_type") @db.VarChar(50)
+  
+  // Processing status
+  status                  String   @default("active") @db.VarChar(20)  // active, merged, archived
+  episodeGenerated        Boolean  @default(false) @map("episode_generated")
+  episodeEligible         Boolean  @default(false) @map("episode_eligible")
+  briefingGenerated       Boolean  @default(false) @map("briefing_generated")
+  
+  // Clustering/deduplication
+  mergedIntoId            String?  @map("merged_into_id")
+  clusterId               String?  @map("cluster_id")
+  
+  // Timestamps
+  firstReportedAt         DateTime? @map("first_reported_at")
+  createdAt               DateTime  @default(now()) @map("created_at")
+  updatedAt               DateTime  @updatedAt @map("updated_at")
+  
+  // Relations
+  sources                 EventSource[]
+  episodeEvents           EpisodeEvent[]
+  nearestProtectedArea    ProtectedArea? @relation(fields: [nearestProtectedAreaId], references: [id])
+  mergedInto              Event?         @relation("EventMerges", fields: [mergedIntoId], references: [id])
+  mergedEvents            Event[]        @relation("EventMerges")
+  videoBriefings          VideoBriefing[]
+  
+  @@map("events")
+  @@index([eventTypePrimary])
+  @@index([severityLevel])
+  @@index([confidenceExtraction])
+  @@index([startDate])
+  @@index([country])
+  @@index([isClassroomSafe])
+  @@index([episodeEligible])
+  @@index([status])
+  @@index([mergedIntoId])
+  @@index([createdAt])
+}
+
+// ============================================
+// EVENT SOURCES - Raw source records
+// ============================================
+model EventSource {
+  id               String   @id @default(uuid())
+  eventId          String?  @map("event_id")
+  
+  // Source identification
+  url              String   @db.VarChar(2000)
+  publisher        String?  @db.VarChar(300)
+  sourceType       String   @map("source_type") @db.VarChar(50)
+  
+  // Content
+  title            String?  @db.VarChar(500)
+  snippet          String?  @db.Text
+  rawTextS3Key     String?  @map("raw_text_s3_key") @db.VarChar(500)
+  
+  // Credibility
+  credibilityScore Decimal? @map("credibility_score") @db.Decimal(3, 2)
+  isPrimarySource  Boolean  @default(false) @map("is_primary_source")
+  
+  // Processing status
+  extractionStatus String?  @map("extraction_status") @db.VarChar(50)  // pending, extracted, failed, too_short
+  
+  // Temporal
+  publishedAt      DateTime? @map("published_at")
+  scrapedAt        DateTime  @default(now()) @map("scraped_at")
+  
+  language         String   @default("en") @db.VarChar(10)
+  
+  // Relations
+  event            Event?   @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  extraction       SourceExtraction?
+  
+  @@unique([url])
+  @@map("event_sources")
+  @@index([eventId])
+  @@index([sourceType])
+  @@index([extractionStatus])
+  @@index([scrapedAt])
+}
+
+// ============================================
+// SOURCE EXTRACTIONS - Raw LLM outputs
+// ============================================
+model SourceExtraction {
+  id              String   @id @default(uuid())
+  sourceId        String   @unique @map("source_id")
+  eventId         String?  @map("event_id")
+  
+  schemaVersion   String   @map("schema_version") @db.VarChar(50)
+  model           String   @db.VarChar(100)
+  extractionJson  Json     @map("extraction_json")
+  
+  qualityScore    Decimal? @map("quality_score") @db.Decimal(3, 2)
+  geoValidation   Json?    @map("geo_validation")
+  
+  createdAt       DateTime @default(now()) @map("created_at")
+  
+  // Relations
+  source          EventSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  
+  @@map("source_extractions")
+  @@index([eventId])
+  @@index([createdAt])
+}
+
+// ============================================
+// EVENT MERGES - Audit trail for deduplication
+// ============================================
+model EventMerge {
+  id              String   @id @default(uuid())
+  primaryEventId  String   @map("primary_event_id")
+  mergedEventId   String   @map("merged_event_id")
+  
+  similarityScore Decimal  @map("similarity_score") @db.Decimal(4, 3)
+  mergeReason     String?  @map("merge_reason") @db.VarChar(500)
+  
+  mergedAt        DateTime @default(now()) @map("merged_at")
+  
+  @@map("event_merges")
+  @@index([primaryEventId])
+  @@index([mergedEventId])
+}
+
+// ============================================
+// CLASSROOM EPISODES - Generated content
+// ============================================
+model ClassroomEpisode {
+  id                    String   @id @default(uuid())
+  
+  episodeTitle          String   @map("episode_title") @db.VarChar(300)
+  episodeType           String   @map("episode_type") @db.VarChar(30)
+  
+  gradeBand             String   @map("grade_band") @db.VarChar(10)
+  topicTags             String[] @map("topic_tags")
+  
+  runTimeSeconds        Int      @map("run_time_seconds")
+  
+  // Student content
+  summaryForStudents    String   @map("summary_for_students") @db.Text
+  hookQuestion          String?  @map("hook_question") @db.Text
+  keyTakeaway           String?  @map("key_takeaway") @db.Text
+  
+  // Script
+  scriptText            String   @map("script_text") @db.Text
+  scriptSections        Json?    @map("script_sections")
+  
+  // Teacher toolkit
+  learningTargets       String[] @map("learning_targets")
+  vocabTerms            Json     @default("[]") @map("vocab_terms")
+  quickCheck            Json     @default("[]") @map("quick_check")
+  discussionPrompts     String[] @map("discussion_prompts")
+  activityDescription   String?  @map("activity_description") @db.Text
+  exitTicket            String?  @map("exit_ticket") @db.Text
+  
+  // Assets
+  teacherToolkitPdfUrl  String?  @map("teacher_toolkit_pdf_url") @db.VarChar(500)
+  videoUrl              String?  @map("video_url") @db.VarChar(500)
+  thumbnailUrl          String?  @map("thumbnail_url") @db.VarChar(500)
+  
+  // Status
+  status                String   @default("draft") @db.VarChar(20)
+  generationError       String?  @map("generation_error") @db.Text
+  
+  // Pictory tracking
+  pictoryProjectId      String?  @map("pictory_project_id") @db.VarChar(100)
+  
+  // Timestamps
+  publishedAt           DateTime? @map("published_at")
+  weekOf                DateTime? @map("week_of") @db.Date
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+  
+  // Relations
+  episodeEvents         EpisodeEvent[]
+  
+  @@map("classroom_episodes")
+  @@index([gradeBand])
+  @@index([status])
+  @@index([publishedAt])
+  @@index([weekOf])
+}
+
+// ============================================
+// EPISODE-EVENT BRIDGE TABLE
+// ============================================
+model EpisodeEvent {
+  episodeId     String  @map("episode_id")
+  eventId       String  @map("event_id")
+  
+  relationType  String  @map("relation_type") @db.VarChar(30)
+  orderIndex    Int     @default(0) @map("order_index")
+  contentUsed   String? @map("content_used") @db.Text
+  
+  // Relations
+  episode       ClassroomEpisode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  event         Event            @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  
+  @@id([episodeId, eventId])
+  @@map("episode_events")
+}
+
+// ============================================
+// VIDEO BRIEFINGS (30-90 sec)
+// ============================================
+model VideoBriefing {
+  id              String   @id @default(uuid())
+  eventId         String   @map("event_id")
+  
+  title           String   @db.VarChar(300)
+  durationSeconds Int      @map("duration_seconds")
+  
+  scriptJson      Json     @map("script_json")
+  
+  // Assets
+  videoUrl        String?  @map("video_url") @db.VarChar(500)
+  thumbnailUrl    String?  @map("thumbnail_url") @db.VarChar(500)
+  
+  // Status
+  status          String   @default("draft") @db.VarChar(20)
+  pictoryProjectId String? @map("pictory_project_id") @db.VarChar(100)
+  generationError String?  @map("generation_error") @db.Text
+  
+  createdAt       DateTime @default(now()) @map("created_at")
+  publishedAt     DateTime? @map("published_at")
+  
+  // Relations
+  event           Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  
+  @@map("video_briefings")
+  @@index([eventId])
+  @@index([status])
+}
+
+// ============================================
+// PROTECTED AREAS
+// ============================================
+model ProtectedArea {
+  id            String   @id @default(uuid())
+  
+  name          String   @db.VarChar(500)
+  designation   String?  @db.VarChar(200)
+  wdpaId        Int?     @map("wdpa_id")
+  
+  country       String   @db.VarChar(100)
+  latitude      Decimal? @db.Decimal(10, 8)
+  longitude     Decimal? @db.Decimal(11, 8)
+  areaKm2       Decimal? @map("area_km2") @db.Decimal(12, 2)
+  
+  iucnCategory  String?  @map("iucn_category") @db.VarChar(10)
+  
+  createdAt     DateTime @default(now()) @map("created_at")
+  
+  // Relations
+  nearbyEvents  Event[]
+  
+  @@map("protected_areas")
+  @@index([country])
+  @@index([wdpaId])
+}
+
+// ============================================
+// USERS
+// ============================================
+model User {
+  id            String   @id @default(uuid())
+  
+  email         String   @unique @db.VarChar(255)
+  passwordHash  String?  @map("password_hash") @db.VarChar(255)
+  
+  name          String?  @db.VarChar(200)
+  role          String   @default("user") @db.VarChar(50)
+  organization  String?  @db.VarChar(200)
+  
+  preferences   Json     @default("{}")
+  
+  createdAt     DateTime @default(now()) @map("created_at")
+  lastLoginAt   DateTime? @map("last_login_at")
+  
+  // Relations
+  alertSubscriptions AlertSubscription[]
+  
+  @@map("users")
+}
+
+// ============================================
+// ALERT SUBSCRIPTIONS
+// ============================================
+model AlertSubscription {
+  id              String   @id @default(uuid())
+  userId          String   @map("user_id")
+  
+  // Filter criteria
+  eventTypes      String[] @map("event_types")
+  minSeverity     Int?     @map("min_severity")
+  countries       String[] @default([])
+  
+  // Delivery
+  deliveryMethod  String   @map("delivery_method") @db.VarChar(20)
+  frequency       String   @db.VarChar(20)
+  
+  isActive        Boolean  @default(true) @map("is_active")
+  
+  createdAt       DateTime @default(now()) @map("created_at")
+  lastSentAt      DateTime? @map("last_sent_at")
+  
+  // Relations
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("alert_subscriptions")
+  @@index([userId])
+  @@index([isActive])
+}
+
+// ============================================
+// RSS FEED CONFIGS
+// ============================================
+model RssFeedConfig {
+  id              String   @id @default(uuid())
+  
+  url             String   @unique @db.VarChar(500)
+  name            String   @db.VarChar(200)
+  sourceType      String   @map("source_type") @db.VarChar(50)
+  
+  priority        String   @default("normal") @db.VarChar(20)
+  scrapeInterval  Int      @default(120) @map("scrape_interval")  // minutes
+  
+  isActive        Boolean  @default(true) @map("is_active")
+  lastScrapedAt   DateTime? @map("last_scraped_at")
+  lastError       String?  @map("last_error") @db.Text
+  
+  createdAt       DateTime @default(now()) @map("created_at")
+  
+  @@map("rss_feed_configs")
+  @@index([isActive])
+  @@index([lastScrapedAt])
+}
+
+// ============================================
+// JOB LOGS - Pipeline monitoring
+// ============================================
+model JobLog {
+  id            String   @id @default(uuid())
+  
+  jobId         String   @map("job_id") @db.VarChar(100)
+  jobType       String   @map("job_type") @db.VarChar(50)
+  correlationId String   @map("correlation_id") @db.VarChar(100)
+  
+  status        String   @db.VarChar(20)  // started, completed, failed
+  durationMs    Int?     @map("duration_ms")
+  
+  inputPayload  Json?    @map("input_payload")
+  outputSummary Json?    @map("output_summary")
+  errorMessage  String?  @map("error_message") @db.Text
+  errorStack    String?  @map("error_stack") @db.Text
+  
+  createdAt     DateTime @default(now()) @map("created_at")
+  
+  @@map("job_logs")
+  @@index([jobId])
+  @@index([jobType])
+  @@index([correlationId])
+  @@index([status])
+  @@index([createdAt])
+}

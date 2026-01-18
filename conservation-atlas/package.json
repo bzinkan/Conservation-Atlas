@@ -1,0 +1,36 @@
+{
+  "name": "conservation-atlas",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Real-time global conservation monitoring platform",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev:api",
+    "dev:api": "npm run dev -w packages/api",
+    "dev:worker": "npm run dev -w packages/worker",
+    "build": "npm run build -ws",
+    "test": "npm run test -ws --if-present",
+    "lint": "eslint packages/*/src --ext .ts,.tsx",
+    "lint:fix": "eslint packages/*/src --ext .ts,.tsx --fix",
+    "typecheck": "tsc --noEmit",
+    "db:migrate": "prisma migrate dev --schema=packages/shared/db/schema.prisma",
+    "db:generate": "prisma generate --schema=packages/shared/db/schema.prisma",
+    "db:push": "prisma db push --schema=packages/shared/db/schema.prisma",
+    "wdpa:pick-layer": "ts-node tools/pick_wdpa_layer.ts",
+    "wdpa:generate-mapping": "ts-node tools/generate_wdpa_mapping.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@typescript-eslint/eslint-plugin": "^6.13.0",
+    "@typescript-eslint/parser": "^6.13.0",
+    "eslint": "^8.54.0",
+    "prisma": "^5.6.0",
+    "ts-node": "^10.9.1",
+    "typescript": "^5.3.2"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
